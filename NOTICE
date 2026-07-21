@@ -1,0 +1,13 @@
+Regulated Data Ops Platform
+Copyright 2026 Pedro Castillo
+
+The declarative data-contract pattern in src/regulated_data_ops/contract.py was
+adapted from:
+
+  Contract-Driven Data Pipeline
+  Copyright 2026 Theofanis Tsakanikas
+  https://github.com/theofanis-tsakanikas/contract-driven-data-pipeline
+
+The upstream work is licensed under the MIT License. Its copyright and
+permission notice are reproduced in THIRD_PARTY_NOTICES.md. Exact source,
+commit, blob and transformations are recorded in PROVENANCE.yaml.
