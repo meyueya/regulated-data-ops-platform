@@ -1,0 +1,40 @@
+schema_version: 1
+project: regulated-data-ops-platform
+generated_at: "2026-07-21"
+
+discovery_gate:
+  rejected:
+    - repository: https://github.com/dbt-labs/jaffle-shop
+      reason: no root LICENSE file found at evaluation time
+
+upstream:
+  repository: https://github.com/theofanis-tsakanikas/contract-driven-data-pipeline
+  commit: 5f422adeb31743a73a78f9eab5e58ed5b7f32adf
+  license: MIT
+  license_blob_sha: 99d6abadddfac8ae4535c001bc8f4b6d13c24278
+
+derived_components:
+  - source_path: scripts/data_contract.py
+    source_blob_sha: bdcdd5b48f3496e27451d534b900095133be645e
+    destination_path: src/regulated_data_ops/contract.py
+    relationship: structurally_adapted
+    retained_concepts:
+      - immutable declarative field rules
+      - ordered validation reasons
+      - sensitivity classification at the data boundary
+      - generated human-readable contract documentation
+    transformations:
+      - changes domain from user profiles to regulated payment events
+      - replaces MD5 pseudonyms with secret-keyed HMAC-SHA256
+      - adds UUID, money, timezone, country and lawful-basis rules
+      - adds contract fingerprinting and versioning
+      - adds transactional run evidence and source checksums
+      - minimizes quarantine records instead of retaining raw PII
+    copied_verbatim_lines: 0
+    modification_notice_present: true
+
+publication:
+  visibility: private-first
+  automatic_merge: false
+  automatic_publication: false
+  human_approval_required: true

@@ -1,0 +1,4 @@
+event_id,customer_email,amount,currency,event_time,country,lawful_basis
+9f4ec919-2ff5-4cd1-9017-8ff0a99daf2d,ana.synthetic@example.test,125.40,EUR,2026-07-20T10:15:00+00:00,ES,contract
+1cfaa082-cfc7-467e-b06f-a9f75d42f03a,leo.synthetic@example.test,49.99,USD,2026-07-20T10:16:00+00:00,US,consent
+3eb26cb4-b443-4cab-a865-2be6ae4de711,invalid.synthetic@example.test,-8.00,EUR,2026-07-20T10:17:00+00:00,ES,contract
