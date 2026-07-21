@@ -1,47 +1,52 @@
 # Regulated Data Ops Platform
 
 Plataforma evolutiva para operar datos de alto riesgo con contratos, evidencia
-y controles verificables. V1 implementa una frontera de ingesta local para
-eventos de pago completamente sintéticos.
+y controles verificables. V2 convierte la ingesta segura de V1 en un sistema
+que declara, mide y comunica su nivel de confianza operacional.
 
-## V1 — Ingesta bajo contrato
+## V2 — Confianza operativa
 
-El pipeline:
+| Control | Resultado verificable |
+| --- | --- |
+| Política versionada | reglas y SLO en `config/trust-policy.json`, con SHA-256 |
+| Compatibilidad | los CSV V1 siguen funcionando sin modificación |
+| Evolución de esquema | `source_system` es opcional y usa `legacy` por defecto |
+| Calidad por ejecución | tasas de validez y cuarentena, duración y breaches |
+| Señal para automatización | `trust-report --fail-on-breach` devuelve código 2 |
+| Migración | una base V1 recibe columnas V2 sin perder pagos existentes |
 
-1. identifica el archivo mediante SHA-256;
-2. registra una ejecución auditable;
-3. valida cada fila contra un contrato versionado;
-4. pseudonimiza el correo con HMAC-SHA256;
-5. convierte importes decimales a unidades menores;
-6. carga eventos válidos de forma idempotente;
-7. envía registros inválidos a cuarentena sin conservar PII en claro;
-8. conserva lineage entre archivo, ejecución, fila y resultado.
+Las reglas configurables limitan monedas, bases legales, importe máximo y
+sistemas productores. Un cambio inválido en la política falla antes de iniciar
+la ingesta.
 
-## Ejecutar
+## Probar
 
     python -m unittest discover -s tests -v
-    export REGULATED_DATA_HMAC_KEY="demo-key-with-at-least-16-characters"
-    PYTHONPATH=src python -m regulated_data_ops.cli --database demo.db ingest examples/payments.csv
-    PYTHONPATH=src python -m regulated_data_ops.cli --database demo.db status
+    export REGULATED_DATA_HMAC_KEY="demo-key-with-at-least-32-characters"
+    PYTHONPATH=src python -m regulated_data_ops.cli policy-check config/trust-policy.json
+    PYTHONPATH=src python -m regulated_data_ops.cli --database demo-v2.db ingest examples/payments-clean-v2.csv --policy config/trust-policy.json
+    PYTHONPATH=src python -m regulated_data_ops.cli --database demo-v2.db trust-report --fail-on-breach
+    PYTHONPATH=src python -m regulated_data_ops.cli --database demo-v2.db schema-status
 
-La clave de demostración no debe utilizarse en producción.
+La demo limpia produce dos pagos válidos, esquema `native` y confianza
+`passing`. La clave de demostración no debe utilizarse en producción.
 
-## Resultado esperado del ejemplo
+## Compatibilidad con V1
 
-- dos pagos aceptados;
-- un registro en cuarentena por importe inválido;
-- ninguna dirección de correo almacenada en SQLite;
-- una segunda ingesta produce duplicados, no nuevas filas.
+`examples/payments.csv` no incluye `source_system`. V2 lo acepta en modo
+`backward-compatible`, asigna `legacy` y conserva el fingerprint contractual
+histórico de V1. Campos desconocidos siguen fallando de forma cerrada.
 
 ## Qué demuestra
 
 | Perfil | Evidencia |
 | --- | --- |
-| Data Engineer | contrato, ingesta, normalización, idempotencia y lineage |
-| High-Risk Data | PII pseudonimizada y cuarentena minimizada |
-| Regulated Environments | ejecución, fuente y decisión reconstruibles |
-| Cybersecurity | clave externa, HMAC y modelo de amenazas |
-| Senior Engineering | transacciones, fallos cerrados y ADR |
+| Data Engineer | contratos compatibles, migración, métricas e idempotencia |
+| High-Risk Data | SLO explícitos, cuarentena observable y alertas |
+| Regulated Environments | política y decisión reconstruibles por ejecución |
+| Cybersecurity | PII pseudonimizada y configuración fail-closed |
+| Senior Engineering | evolución sin romper consumidores anteriores |
 
-El arco completo V1–V5 está en docs/ROADMAP.md. La fuente abierta y su
-transformación están documentadas en PROVENANCE.yaml.
+V2 continúa siendo una demostración local con datos sintéticos. FastAPI,
+autenticación y dashboard pertenecen a V3. El arco completo está en
+`docs/ROADMAP.md`; la procedencia abierta está en `PROVENANCE.yaml`.

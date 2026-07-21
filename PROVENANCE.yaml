@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 project: regulated-data-ops-platform
 generated_at: "2026-07-21"
 
@@ -32,6 +32,21 @@ derived_components:
       - minimizes quarantine records instead of retaining raw PII
     copied_verbatim_lines: 0
     modification_notice_present: true
+
+evolution:
+  - version: 2.0.0
+    relationship: original_project_evolution
+    external_source_code_added: false
+    changes:
+      - configurable rule policy with deterministic fingerprint
+      - backward-compatible optional source-system field
+      - per-run SLO evidence and trust reporting
+      - additive migration from the V1 SQLite schema
+    invariants:
+      - V1 contract fingerprint remains unchanged
+      - V1 CSV headers remain accepted
+      - unknown headers continue to fail closed
+      - no direct identifier is persisted
 
 publication:
   visibility: private-first

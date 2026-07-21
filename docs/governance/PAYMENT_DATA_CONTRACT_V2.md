@@ -1,6 +1,6 @@
-# Data contract — regulated-payment-events v1.0.0
+# Data contract — regulated-payment-events v2.0.0
 
-Contract fingerprint: 2d1c4194d51f7c8386fb98ad6c281ee2503e9f08f3aa8fc74d5d659066b62299
+Contract fingerprint: fe28205134f6800081e2c7687a95348ec203d395c634ecdb26af2ed69f5594ab
 
 | Field | Rule | Sensitivity | Required | Default | Failure code |
 | --- | --- | --- | --- | --- | --- |
@@ -11,6 +11,7 @@ Contract fingerprint: 2d1c4194d51f7c8386fb98ad6c281ee2503e9f08f3aa8fc74d5d659066
 | event_time | timestamp | operational | true | — | invalid_event_time |
 | country | country | quasi_identifier | true | — | invalid_country |
 | lawful_basis | enum | governance | true | — | invalid_lawful_basis |
+| source_system | enum | operational | false | legacy | unsupported_source_system |
 
 Rows failing a rule are quarantined using the first failure code
 in contract order. Direct identifiers are never persisted in clear.

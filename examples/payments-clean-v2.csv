@@ -1,0 +1,3 @@
+event_id,customer_email,amount,currency,event_time,country,lawful_basis,source_system
+68518f42-f422-4f98-a83a-f4d779c8a9fb,synthetic.alpha@example.test,20.00,EUR,2026-07-21T12:00:00+00:00,ES,contract,core-banking
+7b225983-2375-434e-b79c-242dd3f475bc,synthetic.beta@example.test,85.75,USD,2026-07-21T12:01:00+00:00,US,legal_obligation,fraud-screening

@@ -1,0 +1,15 @@
+{
+  "policy_version": "2.0.0",
+  "rules": {
+    "allowed_currencies": ["EUR", "USD", "GBP"],
+    "allowed_lawful_bases": ["contract", "consent", "legal_obligation"],
+    "maximum_amount": "100000.00",
+    "allowed_source_systems": ["legacy", "core-banking", "fraud-screening"]
+  },
+  "slo": {
+    "minimum_valid_rate": 0.95,
+    "maximum_quarantine_rate": 0.05,
+    "maximum_run_duration_ms": 5000,
+    "minimum_total_rows": 1
+  }
+}

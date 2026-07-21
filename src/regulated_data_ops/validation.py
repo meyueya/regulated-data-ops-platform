@@ -18,7 +18,7 @@ COUNTRY_PATTERN = re.compile(r"^[A-Z]{2}$")
 
 
 def _valid(rule: FieldRule, value: str) -> bool:
-    value = value.strip()
+    value = (value or "").strip()
     if rule.rule_type == RuleType.UUID:
         try:
             UUID(value)
@@ -49,11 +49,12 @@ def _valid(rule: FieldRule, value: str) -> bool:
 
 
 def validate_row(contract: DataContract, row: Mapping[str, str]) -> tuple[str, ...]:
-    return tuple(
-        rule.failure_code
-        for rule in contract.fields
-        if not _valid(rule, row.get(rule.name, ""))
-    )
+    failures: list[str] = []
+    for rule in contract.fields:
+        value = row.get(rule.name) or ""
+        if (rule.required or value.strip()) and not _valid(rule, value):
+            failures.append(rule.failure_code)
+    return tuple(failures)
 
 
 def subject_token(email: str, key: bytes) -> str:
@@ -75,4 +76,5 @@ def normalized_payment(row: Mapping[str, str], key: bytes) -> dict[str, object]:
         "event_time": datetime.fromisoformat(row["event_time"].strip()).isoformat(),
         "country": row["country"].strip(),
         "lawful_basis": row["lawful_basis"].strip(),
+        "source_system": (row.get("source_system") or "").strip() or "legacy",
     }
