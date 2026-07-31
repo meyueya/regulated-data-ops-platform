@@ -1,4 +1,6 @@
-"""Public interface for Regulated Data Ops Platform V2."""
+"""Public interface for Regulated Data Ops Platform V3."""
+
+__version__ = "3.0.0"
 
 from regulated_data_ops.contract import (
     PAYMENT_CONTRACT,
@@ -17,4 +19,5 @@ __all__ = [
     "PAYMENT_CONTRACT_V2",
     "RunReport",
     "TrustPolicy",
+    "__version__",
 ]

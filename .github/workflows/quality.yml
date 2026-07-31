@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --no-deps -e .
+      - run: python -m pip install -e ".[test]"
       - run: python -m unittest discover -s tests -v
       - run: regulated-data-ops policy-check config/trust-policy.json
       - name: Run V2 operational demo
@@ -29,3 +29,8 @@ jobs:
           regulated-data-ops --database ci-v2.db ingest examples/payments-clean-v2.csv --policy config/trust-policy.json
           regulated-data-ops --database ci-v2.db trust-report --fail-on-breach
           regulated-data-ops --database ci-v2.db schema-status
+      - name: Verify V3 application configuration
+        env:
+          REGULATED_DATA_API_KEY: ci-api-key-with-at-least-32-characters
+          REGULATED_DATA_HMAC_KEY: ci-hmac-key-with-at-least-32-characters
+        run: regulated-data-ops --help

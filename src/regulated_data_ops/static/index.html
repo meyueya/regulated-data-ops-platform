@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Centro operativo para datos regulados sintéticos">
+  <title>Regulated Data Ops · V3</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Regulated Data Ops">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <span><strong>Regulated Data Ops</strong><small>Operations plane · V3</small></span>
+    </a>
+    <div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionLabel">Sin autenticar</span></div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">CONTROL ROOM / SYNTHETIC DATA</p>
+        <h1>Confianza operacional,<br><span>visible y accionable.</span></h1>
+        <p class="lede">Supervisa contratos, SLO y lineage sin exponer PII ni rutas internas.</p>
+      </div>
+      <form id="authForm" class="auth-card">
+        <label for="apiKey">Clave de sesión</label>
+        <div class="auth-row">
+          <input id="apiKey" type="password" minlength="32" autocomplete="off" placeholder="X-API-Key" required>
+          <button type="submit">Conectar</button>
+        </div>
+        <p>Se conserva sólo en esta pestaña. Nunca en almacenamiento persistente.</p>
+      </form>
+    </section>
+
+    <section id="workspace" class="workspace is-locked" aria-live="polite">
+      <div id="notice" class="notice">Introduce la clave operativa para cargar evidencia.</div>
+
+      <div class="metric-grid">
+        <article class="metric trust-metric"><span>Estado de confianza</span><strong id="trustStatus">—</strong><small id="trustWindow">Sin evidencia</small></article>
+        <article class="metric"><span>Tasa válida</span><strong id="validRate">—</strong><small>aceptados + duplicados</small></article>
+        <article class="metric"><span>Cuarentena</span><strong id="quarantineRate">—</strong><small>sobre filas procesadas</small></article>
+        <article class="metric"><span>Última ejecución</span><strong id="lastRun">—</strong><small id="lastRunMeta">No disponible</small></article>
+      </div>
+
+      <div class="operations-grid">
+        <article class="panel ingestion-panel">
+          <div class="panel-head"><div><p class="kicker">ACCIÓN CONTROLADA</p><h2>Nueva ingesta</h2></div><span class="badge">CSV permitido</span></div>
+          <p>Selecciona una fuente sintética publicada por el servidor. No se aceptan rutas ni cargas arbitrarias.</p>
+          <form id="ingestionForm" class="stack-form">
+            <label for="sourceSelect">Fuente disponible</label>
+            <select id="sourceSelect" required><option value="">Conecta para consultar</option></select>
+            <button type="submit" class="primary">Ejecutar ingesta</button>
+          </form>
+          <div id="ingestionResult" class="result-box">Esperando una operación.</div>
+        </article>
+
+        <article class="panel policy-panel">
+          <div class="panel-head"><div><p class="kicker">POLÍTICA ACTIVA</p><h2>Guardrails</h2></div><span id="policyVersion" class="badge">—</span></div>
+          <dl class="policy-list">
+            <div><dt>Monedas</dt><dd id="currencies">—</dd></div>
+            <div><dt>Importe máximo</dt><dd id="maximumAmount">—</dd></div>
+            <div><dt>Validez mínima</dt><dd id="minimumValid">—</dd></div>
+            <div><dt>Fingerprint</dt><dd id="policyFingerprint" class="mono">—</dd></div>
+          </dl>
+        </article>
+      </div>
+
+      <div class="operations-grid lower-grid">
+        <article class="panel runs-panel">
+          <div class="panel-head"><div><p class="kicker">EVIDENCIA</p><h2>Ejecuciones recientes</h2></div><button id="refreshButton" class="text-button" type="button">Actualizar</button></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Fuente</th><th>Contrato</th><th>Filas</th><th>Duración</th><th>Confianza</th></tr></thead><tbody id="runsBody"><tr><td colspan="5">Sin datos</td></tr></tbody></table>
+          </div>
+        </article>
+
+        <article class="panel lineage-panel">
+          <div class="panel-head"><div><p class="kicker">TRAZABILIDAD</p><h2>Lineage por evento</h2></div></div>
+          <form id="lineageForm" class="stack-form compact">
+            <label for="eventId">UUID del evento aceptado</label>
+            <input id="eventId" type="text" autocomplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+            <button type="submit">Reconstruir lineage</button>
+          </form>
+          <dl id="lineageResult" class="lineage-result"><div><dt>Estado</dt><dd>Sin consulta</dd></div></dl>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer><span>V3 · Superficie operacional autenticada</span><span>Datos sintéticos · Sin PII directa</span></footer>
+  <script src="/assets/dashboard.js" defer></script>
+</body>
+</html>

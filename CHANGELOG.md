@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0.0 — V3: Operación autenticada
+
+- API FastAPI protegida con `X-API-Key` y comparación en tiempo constante;
+- dashboard responsive de confianza, ejecuciones, ingesta, política y lineage;
+- allowlist server-side de fuentes CSV sin rutas arbitrarias;
+- respuestas sanitizadas sin rutas absolutas ni tokens de sujeto;
+- CSP y headers defensivos, caché desactivada en la API y request IDs;
+- bind local por defecto y consentimiento explícito para exposición en red;
+- dependencias directas fijadas y assets empaquetados sin CDN;
+- 49 pruebas acumuladas, incluidas 16 de operación y seguridad web.
+
 ## 2.0.0 — V2: Confianza operativa
 
 - política JSON versionada y fingerprinted;
