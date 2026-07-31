@@ -7,10 +7,17 @@ import hashlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter_ns
 from uuid import UUID, uuid4
 
-from regulated_data_ops.contract import DataContract, PAYMENT_CONTRACT
+from regulated_data_ops.contract import DataContract, payment_contract_for_policy
+from regulated_data_ops.schema import assess_schema
 from regulated_data_ops.store import DataStore
+from regulated_data_ops.trust import (
+    DEFAULT_TRUST_POLICY,
+    TrustPolicy,
+    evaluate_trust,
+)
 from regulated_data_ops.validation import (
     normalized_payment,
     row_fingerprint,
@@ -29,6 +36,13 @@ class RunReport:
     duplicate_rows: int
     source_sha256: str
     contract_fingerprint: str
+    policy_fingerprint: str
+    schema_mode: str
+    duration_ms: int
+    valid_rate: float
+    quarantine_rate: float
+    trust_status: str
+    slo_breaches: tuple[str, ...]
     error_message: str | None = None
 
     def as_dict(self) -> dict[str, object]:
@@ -40,15 +54,18 @@ class IngestionPipeline:
         self,
         database: str | Path,
         hmac_key: str,
-        contract: DataContract = PAYMENT_CONTRACT,
+        contract: DataContract | None = None,
+        policy: TrustPolicy = DEFAULT_TRUST_POLICY,
     ) -> None:
         if len(hmac_key) < 32:
             raise ValueError("hmac_key must contain at least 32 characters")
         self.key = hmac_key.encode("utf-8")
-        self.contract = contract
+        self.policy = policy
+        self.contract = contract or payment_contract_for_policy(policy)
         self.store = DataStore(database)
 
     def ingest(self, source: str | Path) -> RunReport:
+        timer_started = perf_counter_ns()
         source_path = Path(source)
         source_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
         run_id = str(uuid4())
@@ -60,26 +77,30 @@ class IngestionPipeline:
                 "source_sha256": source_sha,
                 "contract_version": self.contract.version,
                 "contract_fingerprint": self.contract.fingerprint,
+                "policy_version": self.policy.version,
+                "policy_fingerprint": self.policy.fingerprint,
                 "started_at": started_at,
             }
         )
 
         counters = {"total": 0, "accepted": 0, "quarantined": 0, "duplicate": 0}
+        schema_mode = "incompatible"
         try:
             with source_path.open(newline="", encoding="utf-8") as handle:
                 reader = csv.DictReader(handle)
-                actual = tuple(reader.fieldnames or ())
-                expected = self.contract.required_headers
-                missing = tuple(name for name in expected if name not in actual)
-                unexpected = tuple(name for name in actual if name not in expected)
-                if missing or unexpected:
-                    raise ValueError(
-                        f"schema mismatch: missing={missing!r}, unexpected={unexpected!r}"
-                    )
+                compatibility = assess_schema(
+                    self.contract, tuple(reader.fieldnames or ())
+                )
+                schema_mode = compatibility.mode
+                compatibility.require_compatible()
 
                 with self.store.connection:
                     for row_number, row in enumerate(reader, start=2):
                         counters["total"] += 1
+                        if None in row:
+                            raise ValueError(
+                                f"row shape mismatch: unexpected values at row {row_number}"
+                            )
                         failures = validate_row(self.contract, row)
                         if failures:
                             email = row.get("customer_email", "")
@@ -102,7 +123,14 @@ class IngestionPipeline:
                         )
                         counters["accepted" if outcome == "inserted" else "duplicate"] += 1
 
-            return self._finish(run_id, source_sha, counters, "succeeded")
+            return self._finish(
+                run_id,
+                source_sha,
+                counters,
+                "succeeded",
+                schema_mode,
+                timer_started,
+            )
         except Exception as exc:
             rolled_back = counters | {
                 "accepted": 0,
@@ -114,6 +142,8 @@ class IngestionPipeline:
                 source_sha,
                 rolled_back,
                 "failed",
+                schema_mode,
+                timer_started,
                 error_message=str(exc),
             )
             raise
@@ -124,8 +154,20 @@ class IngestionPipeline:
         source_sha: str,
         counters: dict[str, int],
         status: str,
+        schema_mode: str,
+        timer_started: int,
         error_message: str | None = None,
     ) -> RunReport:
+        duration_ms = max(0, (perf_counter_ns() - timer_started) // 1_000_000)
+        evaluation = evaluate_trust(
+            self.policy,
+            run_status=status,
+            total_rows=counters["total"],
+            accepted_rows=counters["accepted"],
+            quarantined_rows=counters["quarantined"],
+            duplicate_rows=counters["duplicate"],
+            duration_ms=duration_ms,
+        )
         report = RunReport(
             run_id=run_id,
             status=status,
@@ -135,6 +177,13 @@ class IngestionPipeline:
             duplicate_rows=counters["duplicate"],
             source_sha256=source_sha,
             contract_fingerprint=self.contract.fingerprint,
+            policy_fingerprint=self.policy.fingerprint,
+            schema_mode=schema_mode,
+            duration_ms=duration_ms,
+            valid_rate=evaluation.valid_rate,
+            quarantine_rate=evaluation.quarantine_rate,
+            trust_status=evaluation.status,
+            slo_breaches=evaluation.breaches,
             error_message=error_message,
         )
         payload = report.as_dict() | {
@@ -148,6 +197,9 @@ class IngestionPipeline:
 
     def lineage(self, event_id: str) -> dict[str, object] | None:
         return self.store.lineage(event_id)
+
+    def trust_report(self, limit: int = 20) -> dict[str, object]:
+        return self.store.trust_report(limit)
 
     def close(self) -> None:
         self.store.close()
