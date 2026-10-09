@@ -13,10 +13,11 @@ const elements = {
   minimumValid: document.querySelector("#minimumValid"), policyFingerprint: document.querySelector("#policyFingerprint"),
   runsBody: document.querySelector("#runsBody"), refreshButton: document.querySelector("#refreshButton"),
   lineageForm: document.querySelector("#lineageForm"), eventId: document.querySelector("#eventId"),
-  lineageResult: document.querySelector("#lineageResult")
+  lineageResult: document.querySelector("#lineageResult"), actorLabel: document.querySelector("#actorLabel")
 };
 
 let apiKey = sessionStorage.getItem("regulatedDataApiKey") || "";
+let permissions = new Set();
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -36,10 +37,11 @@ function percent(value) { return `${(Number(value || 0) * 100).toFixed(1)}%`; }
 function shortHash(value) { return value ? `${String(value).slice(0, 12)}…` : "—"; }
 function clear(element) { while (element.firstChild) element.removeChild(element.firstChild); }
 
-function setConnected(connected) {
+function setConnected(connected, identity = null) {
   elements.workspace.classList.toggle("is-locked", !connected);
   elements.connectionDot.classList.toggle("online", connected);
   text(elements.connectionLabel, connected ? "Sesión autenticada" : "Sin autenticar");
+  text(elements.actorLabel, identity ? `${identity.display_name} · ${identity.role}` : "Identidad no verificada");
 }
 
 function showNotice(message, isError = false) {
@@ -51,12 +53,17 @@ function showNotice(message, isError = false) {
 function hideNotice() { elements.notice.classList.remove("visible", "error"); }
 
 async function loadDashboard() {
-  const [status, report, sources, policy] = await Promise.all([
-    request("/api/v1/status"), request("/api/v1/trust-report?limit=10"),
-    request("/api/v1/sources"), request("/api/v1/policy")
+  const identity = await request("/api/v1/me");
+  permissions = new Set(identity.permissions || []);
+  const [status, report] = await Promise.all([
+    request("/api/v1/status"), request("/api/v1/trust-report?limit=10")
   ]);
+  const sources = permissions.has("sources:read") ? await request("/api/v1/sources") : { sources: [] };
+  const policy = permissions.has("policy:read") ? await request("/api/v1/policy") : null;
   renderStatus(status, report); renderRuns(report.runs || []); renderSources(sources.sources || []); renderPolicy(policy);
-  setConnected(true); hideNotice();
+  elements.ingestionForm.querySelector("button").disabled = !permissions.has("ingestion:create");
+  elements.lineageForm.querySelector("button").disabled = !permissions.has("lineage:read");
+  setConnected(true, identity); hideNotice();
 }
 
 function renderStatus(status, report) {
@@ -85,6 +92,11 @@ function renderSources(sources) {
 }
 
 function renderPolicy(policy) {
+  if (!policy) {
+    text(elements.policyVersion, "Restringida"); text(elements.currencies, "Requiere policy:read");
+    text(elements.maximumAmount, "—"); text(elements.minimumValid, "—"); text(elements.policyFingerprint, "—");
+    return;
+  }
   text(elements.policyVersion, policy.policy_version); text(elements.currencies, policy.rules.allowed_currencies.join(" · "));
   text(elements.maximumAmount, policy.rules.maximum_amount); text(elements.minimumValid, percent(policy.slo.minimum_valid_rate));
   text(elements.policyFingerprint, shortHash(policy.fingerprint)); elements.policyFingerprint.title = policy.fingerprint;
@@ -103,12 +115,14 @@ elements.authForm.addEventListener("submit", async event => {
 
 elements.ingestionForm.addEventListener("submit", async event => {
   event.preventDefault(); elements.ingestionResult.className = "result-box"; text(elements.ingestionResult, "Ejecutando control contractual…");
+  if (!permissions.has("ingestion:create")) { elements.ingestionResult.classList.add("error"); text(elements.ingestionResult, "El rol actual no puede ejecutar ingestas."); return; }
   try { const result = await request("/api/v1/ingestions", { method: "POST", body: JSON.stringify({ source: elements.sourceSelect.value }) }); elements.ingestionResult.classList.add("success"); text(elements.ingestionResult, `${result.source_name}: ${result.trust_status} · ${result.accepted_rows} aceptadas · ${result.quarantined_rows} en cuarentena`); await loadDashboard().catch(error => showNotice(`La ingesta terminó, pero no fue posible actualizar: ${error.message}`, true)); }
   catch (error) { elements.ingestionResult.classList.add("error"); text(elements.ingestionResult, `Operación rechazada: ${error.message}`); }
 });
 
 elements.lineageForm.addEventListener("submit", async event => {
   event.preventDefault();
+  if (!permissions.has("lineage:read")) { renderDefinitionList(elements.lineageResult, { estado: "El rol actual no puede consultar lineage" }); return; }
   try { const result = await request(`/api/v1/lineage/${encodeURIComponent(elements.eventId.value.trim())}`); renderDefinitionList(elements.lineageResult, result); }
   catch (error) { renderDefinitionList(elements.lineageResult, { estado: `No disponible: ${error.message}` }); }
 });

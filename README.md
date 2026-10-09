@@ -1,77 +1,101 @@
 # Regulated Data Ops Platform
 
-Plataforma evolutiva para operar datos de alto riesgo con contratos, evidencia
-y controles verificables. V3 convierte el motor de confianza de V2 en un
-plano operativo autenticado: API FastAPI, dashboard responsive e ingestas
-controladas desde una única superficie.
+Plataforma evolutiva para operar datos sintéticos de alto riesgo con contratos,
+evidencia y controles verificables. V4 convierte la superficie operativa de V3
+en una frontera regulada con identidad individual, RBAC, cifrado autenticado,
+auditoría encadenada y retención controlada por política.
 
-## V3 — Operación autenticada
+## V4 — Gobierno verificable
 
-| Capacidad | Comportamiento operativo |
+| Control | Evidencia ejecutable |
 | --- | --- |
-| Autenticación | todos los endpoints de datos requieren `X-API-Key` |
-| Dashboard | estado, SLO, ejecuciones, política, ingesta y lineage |
-| Ingesta segura | sólo nombres CSV publicados dentro del directorio permitido |
-| Minimización | la API omite rutas absolutas y `subject_token` |
-| Endurecimiento web | CSP, anti-frame, no-sniff, no-referrer y `no-store` |
-| Despliegue seguro | loopback por defecto; red externa exige consentimiento explícito |
-| Compatibilidad | conserva contratos, CLI, migración y 33 pruebas de V1/V2 |
+| Identidad | cada clave resuelve un `actor_id` individual; sólo se persiste SHA-256 |
+| RBAC | `viewer`, `operator`, `auditor` y `admin` tienen permisos explícitos |
+| Policy-as-code | roles, usuarios y retención viven en un JSON versionado y fingerprinted |
+| Cifrado | AES-256-GCM protege rutas, errores y detalle de auditoría con AAD |
+| Auditoría | actor, rol, acción, recurso, resultado y request ID quedan encadenados por hash |
+| Inmutabilidad | triggers SQLite impiden `UPDATE` y `DELETE` del ledger de auditoría |
+| Retención | preview por clase; ejecutar exige rol `admin` y fingerprint exacto |
+| Compatibilidad | conserva contratos, idempotencia, SLO, API y migración V1–V3 |
 
-La clave de API se compara en tiempo constante y el frontend la conserva sólo
-en `sessionStorage`. OpenAPI está desactivado por defecto. La fuente y la
-política son configuración del servidor, no rutas controladas por el cliente.
+El cifrado es de campos sensibles seleccionados, no cifrado integral del archivo
+SQLite. Una implantación real puede añadir volumen cifrado o SQLCipher sin
+cambiar el contrato de la aplicación.
 
-## Probar V3
+## Probar V4
 
     python -m pip install -e ".[test]"
     python -m unittest discover -s tests -v
-    export REGULATED_DATA_API_KEY="demo-api-key-with-at-least-32-characters"
+    regulated-data-ops governance-check config/governance-policy.json
+
     export REGULATED_DATA_HMAC_KEY="demo-hmac-key-with-at-least-32-characters"
-    regulated-data-ops --database demo-v3.db serve \
+    export REGULATED_DATA_ENCRYPTION_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+
+    regulated-data-ops --database demo-v4.db serve \
       --ingestion-root examples \
-      --policy config/trust-policy.json
+      --policy config/trust-policy.json \
+      --governance config/governance-policy.json
 
-Abre `http://127.0.0.1:8000`, introduce la clave de API y ejecuta
-`payments-clean-v2.csv`. El resultado esperado es `passing`, dos filas
-aceptadas y esquema `native`.
+Abre `http://127.0.0.1:8000`. Las claves locales de demostración son:
 
-Las claves de demostración no deben utilizarse en producción. Para enlazar a
-otra interfaz es obligatorio añadir `--allow-network`; esa opción no sustituye
-TLS, un gateway, rate limiting ni gestión de secretos.
+| Rol | Clave sintética |
+| --- | --- |
+| Viewer | `demo-viewer-key-00000000000000000001` |
+| Operator | `demo-operator-key-000000000000000001` |
+| Auditor | `demo-auditor-key-0000000000000000001` |
+| Admin | `demo-admin-key-000000000000000000001` |
 
-## API
+Son credenciales públicas y deliberadamente sintéticas; nunca deben reutilizarse.
+Para generar una clave de cifrado nueva:
 
-| Método | Ruta | Uso |
+    python -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM; import base64; print(base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode())"
+
+## Matriz de permisos
+
+| Capacidad | Viewer | Operator | Auditor | Admin |
+| --- | ---: | ---: | ---: | ---: |
+| Estado y SLO | ✓ | ✓ | ✓ | ✓ |
+| Fuentes e ingesta | — | ✓ | — | ✓ |
+| Lineage | — | ✓ | ✓ | ✓ |
+| Política y gobierno | — | — | ✓ | ✓ |
+| Auditoría | — | — | ✓ | ✓ |
+| Preview de retención | — | — | ✓ | ✓ |
+| Ejecutar retención | — | — | — | ✓ |
+
+## API acumulada
+
+| Método | Ruta | Permiso |
 | --- | --- | --- |
-| `GET` | `/health` | liveness pública, sin datos operativos |
-| `GET` | `/api/v1/status` | última ejecución y versión de esquema |
-| `GET` | `/api/v1/trust-report` | ventana de SLO y ejecuciones sanitizadas |
-| `GET` | `/api/v1/sources` | CSV sintéticos permitidos |
-| `GET` | `/api/v1/policy` | política activa y fingerprint |
-| `GET` | `/api/v1/lineage/{event_id}` | trazabilidad de un evento aceptado |
-| `POST` | `/api/v1/ingestions` | ejecutar una fuente permitida |
-
-Ejemplo directo:
-
-    curl -H "X-API-Key: $REGULATED_DATA_API_KEY" \
-      http://127.0.0.1:8000/api/v1/status
+| `GET` | `/health` | pública, sin datos operativos |
+| `GET` | `/api/v1/me` | `status:read` |
+| `GET` | `/api/v1/status` | `status:read` |
+| `GET` | `/api/v1/trust-report` | `trust:read` |
+| `GET` | `/api/v1/sources` | `sources:read` |
+| `GET` | `/api/v1/policy` | `policy:read` |
+| `GET` | `/api/v1/governance` | `governance:read` |
+| `GET` | `/api/v1/lineage/{event_id}` | `lineage:read` |
+| `GET` | `/api/v1/audit-events` | `audit:read` |
+| `GET` | `/api/v1/audit-integrity` | `audit:read` |
+| `GET` | `/api/v1/retention-preview` | `retention:preview` |
+| `POST` | `/api/v1/ingestions` | `ingestion:create` |
+| `POST` | `/api/v1/retention-executions` | `retention:execute` |
 
 ## Compatibilidad acumulada
 
-V1 aporta contrato, idempotencia, cuarentena, pseudonimización y lineage. V2
-añade política versionada, evolución compatible de esquema y SLO. V3 sólo
-añade una superficie operativa; no cambia los fingerprints históricos ni
-expone PII directa.
+V1 aporta contrato, idempotencia, cuarentena y lineage. V2 añade reglas,
+evolución compatible y SLO. V3 incorpora API y dashboard. V4 añade gobierno sin
+cambiar los fingerprints históricos ni permitir PII directa en las respuestas.
 
 ## Qué demuestra
 
 | Perfil | Evidencia |
 | --- | --- |
 | Data Engineer | contratos compatibles, métricas, lineage e idempotencia |
-| Full Stack | API autenticada y dashboard sin runtime frontend externo |
-| High-Risk Data | selección de fuentes server-side y respuestas minimizadas |
-| Cybersecurity | fail-closed, headers defensivos y límites de red explícitos |
-| Senior Engineering | evolución V1→V3 con regresión y ADR por decisión |
+| Full Stack | API y dashboard adaptados a capacidades por rol |
+| High-Risk Data | minimización, retención explícita y borrado trazable |
+| Cybersecurity | RBAC, AES-GCM, secretos externos y auditoría inmutable |
+| Regulated Environments | policy-as-code, segregación de funciones y evidencia reconstruible |
+| Senior Engineering | evolución V1→V4 con migraciones, ADR y 66 pruebas acumuladas |
 
-El modelo de seguridad está en `THREAT_MODEL.md`, los controles de la API en
-`docs/governance/API_SECURITY.md` y el arco completo en `docs/ROADMAP.md`.
+El modelo de seguridad está en `THREAT_MODEL.md`; la política de gobierno, en
+`docs/governance/GOVERNANCE_POLICY.md`; y el arco, en `docs/ROADMAP.md`.

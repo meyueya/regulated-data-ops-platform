@@ -11,6 +11,7 @@ from time import perf_counter_ns
 from uuid import UUID, uuid4
 
 from regulated_data_ops.contract import DataContract, payment_contract_for_policy
+from regulated_data_ops.crypto import FieldCipher
 from regulated_data_ops.schema import assess_schema
 from regulated_data_ops.store import DataStore
 from regulated_data_ops.trust import (
@@ -56,13 +57,14 @@ class IngestionPipeline:
         hmac_key: str,
         contract: DataContract | None = None,
         policy: TrustPolicy = DEFAULT_TRUST_POLICY,
+        field_cipher: FieldCipher | None = None,
     ) -> None:
         if len(hmac_key) < 32:
             raise ValueError("hmac_key must contain at least 32 characters")
         self.key = hmac_key.encode("utf-8")
         self.policy = policy
         self.contract = contract or payment_contract_for_policy(policy)
-        self.store = DataStore(database)
+        self.store = DataStore(database, field_cipher=field_cipher)
 
     def ingest(self, source: str | Path) -> RunReport:
         timer_started = perf_counter_ns()

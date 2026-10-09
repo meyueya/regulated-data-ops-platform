@@ -1,6 +1,6 @@
 schema_version: 2
 project: regulated-data-ops-platform
-generated_at: "2026-07-31"
+generated_at: "2026-10-09"
 
 discovery_gate:
   rejected:
@@ -65,6 +65,24 @@ evolution:
       - ingestion remains transactional and idempotent
       - direct identifiers and subject tokens are not returned by the API
       - arbitrary client file paths remain prohibited
+  - version: 4.0.0
+    relationship: original_project_evolution
+    external_source_code_added: false
+    design_references:
+      - https://cryptography.io/en/latest/hazmat/primitives/aead/
+      - https://docs.python.org/3/library/hmac.html#hmac.compare_digest
+      - https://www.sqlite.org/lang_createtrigger.html
+    changes:
+      - individual principals and deny-by-default RBAC
+      - versioned governance and retention policy
+      - AES-256-GCM encryption for selected sensitive metadata
+      - append-only actor audit chain with encrypted detail
+      - fingerprint-confirmed retention with atomic audit evidence
+    invariants:
+      - V1 and V2 data contracts remain unchanged
+      - V3 API paths and minimized representations remain compatible
+      - plaintext API and encryption keys are never persisted
+      - retention never removes run summaries or audit evidence
 
 publication:
   visibility: private-first

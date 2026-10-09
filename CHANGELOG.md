@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.0.0 — V4: Gobierno verificable
+
+- identidades individuales y claves almacenadas sólo como SHA-256;
+- RBAC deny-by-default con cuatro roles y diez permisos explícitos;
+- política de gobierno versionada y fingerprinted;
+- AES-256-GCM para rutas, errores y detalle de auditoría;
+- ledger append-only encadenado por hash con actor y request ID;
+- preview y ejecución de retención con confirmación de política;
+- migración aditiva desde bases V1–V3;
+- 66 pruebas acumuladas, incluidas 17 de gobierno, cifrado y segregación.
+
 ## 3.0.0 — V3: Operación autenticada
 
 - API FastAPI protegida con `X-API-Key` y comparación en tiempo constante;

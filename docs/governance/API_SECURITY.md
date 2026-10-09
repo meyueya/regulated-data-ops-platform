@@ -1,14 +1,16 @@
-# V3 API security contract
+# V4 API security contract
 
 ## Authentication boundary
 
-Every `/api/v1/*` operation requires the `X-API-Key` header. `/health`, `/` and
-packaged assets are public but contain no operational records. OpenAPI is
-disabled unless an operator starts the server with `--enable-docs`.
+Every `/api/v1/*` operation requires the `X-API-Key` header. The supplied key
+resolves to one enabled principal in the governance policy; the endpoint then
+requires an explicit permission. `/health`, `/` and packaged assets are public
+but contain no operational records. OpenAPI is disabled unless an operator
+starts the server with `--enable-docs`.
 
-The API key must be at least 32 characters, is compared with
-`secrets.compare_digest` and is never logged, returned or accepted in the URL.
-The dashboard retains it only for the lifetime of the browser tab.
+Only SHA-256 digests are stored and comparisons use `secrets.compare_digest`.
+API keys are never logged, returned or accepted in the URL. The dashboard
+retains the active key only for the lifetime of the browser tab.
 
 ## Data minimization
 
@@ -40,5 +42,6 @@ The CLI binds to `127.0.0.1` by default. A non-loopback host requires the
 operator to supply `--allow-network`. For any shared environment, place the app
 behind TLS, managed authentication, rate limiting and a secrets manager.
 
-V3 deliberately does not claim RBAC, individual actor audit, encryption at
-rest or distributed locking. Those controls belong to V4.
+V4 adds RBAC, individual actor audit and field-level encryption. It does not
+claim full-page SQLite encryption, enterprise identity, distributed rate
+limiting, TLS termination or distributed locking.

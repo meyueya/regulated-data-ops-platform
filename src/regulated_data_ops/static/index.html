@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Centro operativo para datos regulados sintéticos">
-  <title>Regulated Data Ops · V3</title>
+  <title>Regulated Data Ops · V4</title>
   <link rel="stylesheet" href="/assets/dashboard.css">
 </head>
 <body>
@@ -13,20 +13,20 @@
   <header class="topbar">
     <a class="brand" href="/" aria-label="Regulated Data Ops">
       <span class="brand-mark" aria-hidden="true">R</span>
-      <span><strong>Regulated Data Ops</strong><small>Operations plane · V3</small></span>
+      <span><strong>Regulated Data Ops</strong><small>Governed operations · V4</small></span>
     </a>
-    <div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionLabel">Sin autenticar</span></div>
+    <div class="connection"><span id="connectionDot" class="dot"></span><span><span id="connectionLabel">Sin autenticar</span><small id="actorLabel">Identidad no verificada</small></span></div>
   </header>
 
   <main>
     <section class="hero">
       <div>
-        <p class="eyebrow">CONTROL ROOM / SYNTHETIC DATA</p>
-        <h1>Confianza operacional,<br><span>visible y accionable.</span></h1>
-        <p class="lede">Supervisa contratos, SLO y lineage sin exponer PII ni rutas internas.</p>
+        <p class="eyebrow">GOVERNED CONTROL ROOM / SYNTHETIC DATA</p>
+        <h1>Operaciones reguladas,<br><span>con identidad y evidencia.</span></h1>
+        <p class="lede">RBAC, cifrado, auditoría encadenada y retención controlada sobre la misma frontera de datos.</p>
       </div>
       <form id="authForm" class="auth-card">
-        <label for="apiKey">Clave de sesión</label>
+        <label for="apiKey">Clave personal de sesión</label>
         <div class="auth-row">
           <input id="apiKey" type="password" minlength="32" autocomplete="off" placeholder="X-API-Key" required>
           <button type="submit">Conectar</button>
@@ -89,7 +89,7 @@
     </section>
   </main>
 
-  <footer><span>V3 · Superficie operacional autenticada</span><span>Datos sintéticos · Sin PII directa</span></footer>
+  <footer><span>V4 · Gobierno y ciberseguridad verificables</span><span>Datos sintéticos · Sin PII directa</span></footer>
   <script src="/assets/dashboard.js" defer></script>
 </body>
 </html>

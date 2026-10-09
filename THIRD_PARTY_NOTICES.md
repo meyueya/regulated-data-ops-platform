@@ -1,17 +1,17 @@
 # Third-party notices
 
-## V3 runtime and test dependencies
+## V4 runtime and test dependencies
 
 | Package | Version | Use | License |
 | --- | --- | --- | --- |
 | FastAPI | 0.141.1 | HTTP API and security dependency | MIT |
 | Uvicorn | 0.52.0 | ASGI development server | BSD-3-Clause |
 | HTTPX2 | 2.9.1 | API tests only | BSD-3-Clause |
+| cryptography | 50.0.1 | AES-GCM field encryption | Apache-2.0 OR BSD-3-Clause |
 
 These packages are unmodified dependencies installed from their published
 distributions. Their dependency metadata and complete license texts accompany
-those distributions. No FastAPI, Uvicorn or HTTPX2 source code is copied into
-this repository.
+those distributions. No dependency source code is copied into this repository.
 
 ## Contract-Driven Data Pipeline
 

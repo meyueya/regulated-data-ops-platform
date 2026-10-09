@@ -293,7 +293,7 @@ class TrustPipelineTests(unittest.TestCase):
         finally:
             store.close()
         self.assertEqual(row["source_system"], "legacy")
-        self.assertEqual(status["schema_version"], "2.0.0")
+        self.assertEqual(status["schema_version"], "4.0.0")
 
 
 if __name__ == "__main__":

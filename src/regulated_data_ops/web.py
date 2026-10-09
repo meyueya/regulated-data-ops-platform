@@ -1,12 +1,12 @@
-"""Authenticated HTTP operations plane with a same-origin dashboard."""
+"""Identity-aware V4 operations plane with policy-enforced governance."""
 
 from __future__ import annotations
 
-import secrets
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security, status
@@ -16,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from regulated_data_ops import __version__
+from regulated_data_ops.crypto import FieldCipher
+from regulated_data_ops.governance import GovernancePolicy, Principal
 from regulated_data_ops.pipeline import IngestionPipeline
 from regulated_data_ops.store import DataStore
 from regulated_data_ops.trust import TrustPolicy
@@ -30,19 +32,21 @@ class AppConfig:
     database: Path
     ingestion_root: Path
     policy_path: Path
-    api_key: str
+    governance_path: Path
     hmac_key: str
+    encryption_key: str
     enable_docs: bool = False
 
     def __post_init__(self) -> None:
-        if len(self.api_key) < 32:
-            raise ValueError("api_key must contain at least 32 characters")
         if len(self.hmac_key) < 32:
             raise ValueError("hmac_key must contain at least 32 characters")
+        FieldCipher.from_base64(self.encryption_key)
         if not self.ingestion_root.is_dir():
             raise ValueError("ingestion_root must be an existing directory")
         if not self.policy_path.is_file():
             raise ValueError("policy_path must be an existing file")
+        if not self.governance_path.is_file():
+            raise ValueError("governance_path must be an existing file")
 
 
 class IngestionRequest(BaseModel):
@@ -51,10 +55,18 @@ class IngestionRequest(BaseModel):
     source: str = Field(min_length=5, max_length=128)
 
 
+class RetentionExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    confirm_policy_fingerprint: str = Field(min_length=64, max_length=64)
+
+
 def create_app(config: AppConfig) -> FastAPI:
     """Build a fail-closed app from explicit server-side configuration."""
 
-    policy = TrustPolicy.load(config.policy_path)
+    trust_policy = TrustPolicy.load(config.policy_path)
+    governance = GovernancePolicy.load(config.governance_path)
+    cipher = FieldCipher.from_base64(config.encryption_key)
     docs_url = "/docs" if config.enable_docs else None
     openapi_url = "/openapi.json" if config.enable_docs else None
     app = FastAPI(
@@ -65,26 +77,82 @@ def create_app(config: AppConfig) -> FastAPI:
         openapi_url=openapi_url,
     )
     app.state.config = config
-    app.state.policy = policy
+    app.state.trust_policy = trust_policy
+    app.state.governance = governance
+    app.state.field_cipher = cipher
     api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
 
-    def authenticate(
-        supplied: str | None = Security(api_key_header),
+    def write_audit(
+        *,
+        request: Request,
+        principal: Principal | None,
+        action: str,
+        outcome: str,
+        resource_type: str = "endpoint",
+        resource_id: str | None = None,
+        detail: dict[str, object] | None = None,
     ) -> None:
-        if supplied is None or not secrets.compare_digest(supplied, config.api_key):
+        with _store(config.database, cipher) as store:
+            store.append_audit(
+                {
+                    "audit_id": str(uuid4()),
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "actor_id": principal.actor_id if principal else "anonymous",
+                    "actor_role": principal.role if principal else "none",
+                    "action": action,
+                    "resource_type": resource_type,
+                    "resource_id": resource_id or request.url.path,
+                    "outcome": outcome,
+                    "request_id": request.state.request_id,
+                    "detail": detail or {"method": request.method},
+                }
+            )
+
+    def authenticate(
+        request: Request,
+        supplied: str | None = Security(api_key_header),
+    ) -> Principal:
+        principal = governance.authenticate(supplied or "")
+        if principal is None:
+            write_audit(
+                request=request,
+                principal=None,
+                action="authentication",
+                outcome="denied",
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="invalid or missing API key",
                 headers={"WWW-Authenticate": "APIKey"},
             )
+        return principal
 
-    auth = Depends(authenticate)
+    def require(permission: str) -> Callable[..., Principal]:
+        def authorize(
+            request: Request,
+            principal: Principal = Depends(authenticate),
+        ) -> Principal:
+            permitted = governance.permits(principal, permission)
+            write_audit(
+                request=request,
+                principal=principal,
+                action=permission,
+                outcome="allowed" if permitted else "denied",
+            )
+            if not permitted:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"role {principal.role!r} lacks permission {permission!r}",
+                )
+            return principal
+
+        return authorize
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any):
-        request_id = uuid4().hex
+        request.state.request_id = uuid4().hex
         response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Request-ID"] = request.state.request_id
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self'; style-src 'self'; "
             "connect-src 'self'; img-src 'self' data:; object-src 'none'; "
@@ -105,36 +173,53 @@ def create_app(config: AppConfig) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
-    @app.get("/api/v1/status", dependencies=[auth])
-    def latest_status() -> dict[str, object]:
-        with _store(config.database) as store:
+    @app.get("/api/v1/me")
+    def me(
+        principal: Principal = Depends(require("status:read")),
+    ) -> dict[str, object]:
+        return principal.public_dict() | {
+            "permissions": list(governance.permissions_for(principal))
+        }
+
+    @app.get("/api/v1/status")
+    def latest_status(
+        _: Principal = Depends(require("status:read")),
+    ) -> dict[str, object]:
+        with _store(config.database, cipher) as store:
             latest = store.latest_run()
             schema = store.schema_status()
         return {
             "service_version": __version__,
             "schema_version": schema["schema_version"],
+            "encryption_key_id": cipher.key_id,
             "latest_run": _safe_run(latest) if latest else None,
         }
 
-    @app.get("/api/v1/trust-report", dependencies=[auth])
+    @app.get("/api/v1/trust-report")
     def trust_report(
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        _: Principal = Depends(require("trust:read")),
     ) -> dict[str, object]:
-        with _store(config.database) as store:
+        with _store(config.database, cipher) as store:
             report = store.trust_report(limit)
         report["runs"] = [_safe_run(run) for run in report["runs"]]
         return report
 
-    @app.get("/api/v1/lineage/{event_id}", dependencies=[auth])
-    def lineage(event_id: UUID) -> dict[str, object]:
-        with _store(config.database) as store:
+    @app.get("/api/v1/lineage/{event_id}")
+    def lineage(
+        event_id: UUID,
+        _: Principal = Depends(require("lineage:read")),
+    ) -> dict[str, object]:
+        with _store(config.database, cipher) as store:
             result = store.lineage(str(event_id))
         if result is None:
             raise HTTPException(status_code=404, detail="event not found")
         return _safe_lineage(result)
 
-    @app.get("/api/v1/sources", dependencies=[auth])
-    def sources() -> dict[str, list[dict[str, object]]]:
+    @app.get("/api/v1/sources")
+    def sources(
+        _: Principal = Depends(require("sources:read")),
+    ) -> dict[str, list[dict[str, object]]]:
         root = config.ingestion_root.resolve()
         available = []
         for candidate in sorted(root.glob("*.csv")):
@@ -145,29 +230,123 @@ def create_app(config: AppConfig) -> FastAPI:
                 )
         return {"sources": available}
 
-    @app.get("/api/v1/policy", dependencies=[auth])
-    def active_policy() -> dict[str, object]:
-        return policy.as_dict() | {"fingerprint": policy.fingerprint}
+    @app.get("/api/v1/policy")
+    def active_policy(
+        _: Principal = Depends(require("policy:read")),
+    ) -> dict[str, object]:
+        return trust_policy.as_dict() | {"fingerprint": trust_policy.fingerprint}
+
+    @app.get("/api/v1/governance")
+    def active_governance(
+        _: Principal = Depends(require("governance:read")),
+    ) -> dict[str, object]:
+        return governance.public_dict() | {"encryption_key_id": cipher.key_id}
+
+    @app.get("/api/v1/audit-events")
+    def audit_events(
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        _: Principal = Depends(require("audit:read")),
+    ) -> dict[str, object]:
+        with _store(config.database, cipher) as store:
+            events = store.audit_events(limit)
+        return {"events": events}
+
+    @app.get("/api/v1/audit-integrity")
+    def audit_integrity(
+        _: Principal = Depends(require("audit:read")),
+    ) -> dict[str, object]:
+        with _store(config.database, cipher) as store:
+            return store.verify_audit_chain()
+
+    @app.get("/api/v1/retention-preview")
+    def retention_preview(
+        _: Principal = Depends(require("retention:preview")),
+    ) -> dict[str, object]:
+        accepted_before, quarantine_before = _retention_cutoffs(governance)
+        with _store(config.database, cipher) as store:
+            candidates = store.retention_preview(
+                accepted_before=accepted_before,
+                quarantine_before=quarantine_before,
+            )
+        return {
+            "policy_fingerprint": governance.fingerprint,
+            "accepted_before": accepted_before,
+            "quarantine_before": quarantine_before,
+            "candidates": candidates,
+        }
+
+    @app.post("/api/v1/retention-executions")
+    def execute_retention(
+        payload: RetentionExecutionRequest,
+        request: Request,
+        principal: Principal = Depends(require("retention:execute")),
+    ) -> dict[str, object]:
+        if payload.confirm_policy_fingerprint != governance.fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="governance policy fingerprint confirmation does not match",
+            )
+        accepted_before, quarantine_before = _retention_cutoffs(governance)
+        with _store(config.database, cipher) as store:
+            deleted = store.apply_retention(
+                accepted_before=accepted_before,
+                quarantine_before=quarantine_before,
+                audit_values={
+                    "audit_id": str(uuid4()),
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "actor_id": principal.actor_id,
+                    "actor_role": principal.role,
+                    "action": "retention:execute",
+                    "resource_type": "retention_policy",
+                    "resource_id": governance.fingerprint,
+                    "outcome": "succeeded",
+                    "request_id": request.state.request_id,
+                    "detail": {"policy_version": governance.version},
+                },
+            )
+        return {"status": "applied", "deleted": deleted}
 
     @app.post(
         "/api/v1/ingestions",
-        dependencies=[auth],
         status_code=status.HTTP_201_CREATED,
     )
-    def ingest(payload: IngestionRequest) -> dict[str, object]:
+    def ingest(
+        payload: IngestionRequest,
+        request: Request,
+        principal: Principal = Depends(require("ingestion:create")),
+    ) -> dict[str, object]:
         source = _allowed_source(config.ingestion_root, payload.source)
         with _ingestion_lock:
             pipeline = IngestionPipeline(
                 config.database,
                 config.hmac_key,
-                policy=policy,
+                policy=trust_policy,
+                field_cipher=cipher,
             )
             try:
                 report = pipeline.ingest(source).as_dict()
             except ValueError as exc:
+                write_audit(
+                    request=request,
+                    principal=principal,
+                    action="ingestion:create",
+                    outcome="failed",
+                    resource_type="source",
+                    resource_id=source.name,
+                    detail={"error_type": type(exc).__name__},
+                )
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             finally:
                 pipeline.close()
+        write_audit(
+            request=request,
+            principal=principal,
+            action="ingestion:create",
+            outcome="succeeded",
+            resource_type="ingestion_run",
+            resource_id=str(report["run_id"]),
+            detail={"source_name": source.name, "trust_status": report["trust_status"]},
+        )
         return _safe_run(report) | {"source_name": source.name}
 
     app.mount("/assets", StaticFiles(directory=_STATIC_ROOT), name="assets")
@@ -175,8 +354,8 @@ def create_app(config: AppConfig) -> FastAPI:
 
 
 class _StoreContext:
-    def __init__(self, database: Path) -> None:
-        self.store = DataStore(database)
+    def __init__(self, database: Path, cipher: FieldCipher) -> None:
+        self.store = DataStore(database, field_cipher=cipher)
 
     def __enter__(self) -> DataStore:
         return self.store
@@ -185,8 +364,15 @@ class _StoreContext:
         self.store.close()
 
 
-def _store(database: Path) -> _StoreContext:
-    return _StoreContext(database)
+def _store(database: Path, cipher: FieldCipher) -> _StoreContext:
+    return _StoreContext(database, cipher)
+
+
+def _retention_cutoffs(governance: GovernancePolicy) -> tuple[str, str]:
+    now = datetime.now(timezone.utc)
+    accepted = now - timedelta(days=governance.retention.accepted_payment_days)
+    quarantine = now - timedelta(days=governance.retention.quarantine_days)
+    return accepted.isoformat(), quarantine.isoformat()
 
 
 def _allowed_source(root_path: Path, source_name: str) -> Path:
@@ -224,9 +410,11 @@ _SAFE_RUN_FIELDS = (
 
 def _safe_run(run: dict[str, object]) -> dict[str, object]:
     result = {field: run[field] for field in _SAFE_RUN_FIELDS if field in run}
-    source_uri = run.get("source_uri")
-    if isinstance(source_uri, str):
-        result["source_name"] = Path(source_uri).name
+    source_name = run.get("source_name")
+    if isinstance(source_name, str) and source_name:
+        result["source_name"] = source_name
+    elif isinstance(run.get("source_uri"), str):
+        result["source_name"] = Path(str(run["source_uri"])).name
     return result
 
 
@@ -245,8 +433,9 @@ def _safe_lineage(row: dict[str, object]) -> dict[str, object]:
         "contract_version",
         "contract_fingerprint",
         "ingested_at",
+        "source_name",
     )
-    result = {field: row[field] for field in fields if field in row}
-    if isinstance(row.get("source_uri"), str):
+    result = {field: row[field] for field in fields if field in row and row[field]}
+    if "source_name" not in result and isinstance(row.get("source_uri"), str):
         result["source_name"] = Path(str(row["source_uri"])).name
     return result
