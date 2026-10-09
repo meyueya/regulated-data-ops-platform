@@ -1,32 +1,56 @@
-# Threat model — V2
+# Threat model — V3
 
 ## Activos
 
 - datos de pago aceptados e identidad pseudonimizada;
 - evidencia de ejecuciones, calidad y lineage;
-- clave HMAC;
-- política de confianza y su fingerprint;
-- compatibilidad entre contratos V1 y V2.
+- claves HMAC y API;
+- política de confianza y sus fingerprints;
+- superficie HTTP y sesión del dashboard;
+- compatibilidad acumulada entre V1, V2 y V3.
 
 ## Controles acumulados
 
 | Amenaza | Control |
 | --- | --- |
 | PII expuesta en tablas | correo sustituido por HMAC-SHA256 |
-| Duplicación por reintento | clave primaria e idempotencia conflictiva |
+| Duplicación o conflicto | clave primaria e idempotencia fail-closed |
 | Registro inválido descartado | cuarentena minimizada con motivo |
 | Fuente o política intercambiada | SHA-256 de ambos artefactos por ejecución |
-| Deriva silenciosa de esquema | compatibilidad explícita y fail-closed |
-| Cambio que rompe V1 | fingerprint histórico y pruebas de regresión |
+| Deriva silenciosa de esquema | compatibilidad explícita y rechazo cerrado |
 | Calidad degradada sin señal | SLO, breaches persistidos y código de salida 2 |
-| Migración destructiva | `ALTER TABLE` aditivo con prueba de conservación |
-| Secreto en repositorio | clave suministrada externamente |
+| Lectura HTTP no autorizada | `X-API-Key` obligatorio y comparación constante |
+| Traversal o lectura de archivo | sólo basename `.csv` bajo raíz resuelta |
+| Exposición de host o token | DTO por allowlist sin ruta ni `subject_token` |
+| XSS o inclusión remota | assets same-origin, CSP y render con `textContent` |
+| Persistencia de clave en navegador | `sessionStorage`, nunca `localStorage` |
+| Clickjacking o MIME confusion | `frame-ancestors`, `DENY` y `nosniff` |
+| Publicación accidental en red | bind loopback; `--allow-network` obligatorio |
+| Operaciones simultáneas locales | exclusión mutua de ingesta en el proceso |
 
-## Límites y riesgos residuales
+## Fronteras
 
-- SQLite no cifra el archivo en reposo;
-- un administrador del host puede alterar la base o la política;
+```mermaid
+flowchart LR
+    U["Operador"] -->|"X-API-Key"| A["API V3"]
+    A -->|"basename validado"| F["CSV sintético"]
+    A --> P["Pipeline V2"]
+    P --> D["SQLite + evidencia"]
+```
+
+La API no transforma la clave de acceso en autorización por rol. La política y
+el directorio de fuentes pertenecen al servidor. El navegador sólo recibe
+datos minimizados.
+
+## Riesgos residuales
+
+- una API key compartida no aporta identidad individual, revocación selectiva
+  ni autorización por rol; V4 incorpora RBAC;
+- SQLite no cifra el archivo en reposo y un administrador del host puede
+  modificar base o política;
+- no hay rate limiting distribuido, TLS terminado por la aplicación ni
+  protección frente a múltiples procesos;
+- `sessionStorage` reduce persistencia, pero un XSS del mismo origen podría leer
+  la clave; la CSP y la ausencia de HTML dinámico reducen esa superficie;
 - el ledger aún no usa encadenamiento criptográfico;
-- el SLO de duración es local y no representa una plataforma distribuida;
-- no existe control de acceso por rol; se incorpora en V4;
-- las alertas se exponen como señal de proceso, no se envían a terceros.
+- los request IDs facilitan correlación, pero V3 no persiste auditoría de actor.

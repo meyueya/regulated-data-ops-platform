@@ -1,6 +1,6 @@
 schema_version: 2
 project: regulated-data-ops-platform
-generated_at: "2026-07-21"
+generated_at: "2026-07-31"
 
 discovery_gate:
   rejected:
@@ -47,6 +47,24 @@ evolution:
       - V1 CSV headers remain accepted
       - unknown headers continue to fail closed
       - no direct identifier is persisted
+  - version: 3.0.0
+    relationship: original_project_evolution
+    external_source_code_added: false
+    design_references:
+      - https://fastapi.tiangolo.com/reference/security/
+      - https://fastapi.tiangolo.com/tutorial/static-files/
+      - https://fastapi.tiangolo.com/tutorial/testing/
+    changes:
+      - authenticated FastAPI operations surface
+      - same-origin operational dashboard
+      - server-controlled synthetic CSV selection
+      - minimized status, trust and lineage representations
+      - security headers and loopback-safe CLI defaults
+    invariants:
+      - V1 and V2 contracts remain unchanged
+      - ingestion remains transactional and idempotent
+      - direct identifiers and subject tokens are not returned by the API
+      - arbitrary client file paths remain prohibited
 
 publication:
   visibility: private-first

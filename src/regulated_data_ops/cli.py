@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
+from pathlib import Path
 from typing import Sequence
 
 from regulated_data_ops.pipeline import IngestionPipeline
@@ -29,12 +31,56 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("schema-status", help="show applied schema migrations")
     policy = commands.add_parser("policy-check", help="validate and fingerprint policy")
     policy.add_argument("path")
+    serve = commands.add_parser("serve", help="serve the authenticated V3 operations plane")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--ingestion-root", default="examples")
+    serve.add_argument("--policy", default="config/trust-policy.json")
+    serve.add_argument(
+        "--allow-network",
+        action="store_true",
+        help="explicitly permit binding to a non-loopback interface",
+    )
+    serve.add_argument(
+        "--enable-docs",
+        action="store_true",
+        help="enable OpenAPI docs for local development",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     exit_code = 0
+    if args.command == "serve":
+        if not _is_loopback(args.host) and not args.allow_network:
+            raise SystemExit(
+                "non-loopback binding requires the explicit --allow-network flag"
+            )
+        api_key = os.getenv("REGULATED_DATA_API_KEY")
+        hmac_key = os.getenv("REGULATED_DATA_HMAC_KEY")
+        if not api_key:
+            raise SystemExit("REGULATED_DATA_API_KEY is required to serve V3")
+        if not hmac_key:
+            raise SystemExit("REGULATED_DATA_HMAC_KEY is required to serve V3")
+        from regulated_data_ops.web import AppConfig, create_app
+
+        try:
+            import uvicorn
+        except ImportError as exc:  # pragma: no cover - packaging failure guard
+            raise SystemExit("uvicorn is required to serve V3") from exc
+        app = create_app(
+            AppConfig(
+                database=Path(args.database),
+                ingestion_root=Path(args.ingestion_root),
+                policy_path=Path(args.policy),
+                api_key=api_key,
+                hmac_key=hmac_key,
+                enable_docs=args.enable_docs,
+            )
+        )
+        uvicorn.run(app, host=args.host, port=args.port)
+        return 0
     if args.command == "ingest":
         key = os.getenv("REGULATED_DATA_HMAC_KEY")
         if not key:
@@ -65,6 +111,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             store.close()
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return exit_code
+
+
+def _is_loopback(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 if __name__ == "__main__":
