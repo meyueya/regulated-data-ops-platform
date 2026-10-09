@@ -1,0 +1,71 @@
+{
+  "policy_version": "4.0.0",
+  "roles": {
+    "viewer": [
+      "status:read",
+      "trust:read"
+    ],
+    "operator": [
+      "status:read",
+      "trust:read",
+      "sources:read",
+      "lineage:read",
+      "ingestion:create"
+    ],
+    "auditor": [
+      "status:read",
+      "trust:read",
+      "policy:read",
+      "lineage:read",
+      "governance:read",
+      "audit:read",
+      "retention:preview"
+    ],
+    "admin": [
+      "status:read",
+      "trust:read",
+      "sources:read",
+      "policy:read",
+      "lineage:read",
+      "ingestion:create",
+      "governance:read",
+      "audit:read",
+      "retention:preview",
+      "retention:execute"
+    ]
+  },
+  "principals": [
+    {
+      "actor_id": "demo-viewer",
+      "display_name": "Demo Viewer",
+      "role": "viewer",
+      "key_sha256": "9fd16d29c31550262b6e2c5a70c7f455106ef239775e580b4bcaedfe0e9c4b6c",
+      "enabled": true
+    },
+    {
+      "actor_id": "demo-operator",
+      "display_name": "Demo Operator",
+      "role": "operator",
+      "key_sha256": "497599c5a61800aa3cdc5622b702ac5cc4c90cba3b6d7bf5a14ce81f06635ce9",
+      "enabled": true
+    },
+    {
+      "actor_id": "demo-auditor",
+      "display_name": "Demo Auditor",
+      "role": "auditor",
+      "key_sha256": "a7bfe769c7302d645dad487bef8fc93bec5a717c6db031a29dcb03fd2374909d",
+      "enabled": true
+    },
+    {
+      "actor_id": "demo-admin",
+      "display_name": "Demo Administrator",
+      "role": "admin",
+      "key_sha256": "09e551f80b6cd0d9f935a87e5e9a2233bec00f31df21cc97cdf508a4032e9e9e",
+      "enabled": true
+    }
+  ],
+  "retention": {
+    "accepted_payment_days": 2555,
+    "quarantine_days": 30
+  }
+}

@@ -1,56 +1,60 @@
-# Threat model — V3
+# Threat model — V4
 
 ## Activos
 
 - datos de pago aceptados e identidad pseudonimizada;
-- evidencia de ejecuciones, calidad y lineage;
-- claves HMAC y API;
-- política de confianza y sus fingerprints;
-- superficie HTTP y sesión del dashboard;
-- compatibilidad acumulada entre V1, V2 y V3.
+- evidencia de ejecuciones, calidad, lineage y decisiones de acceso;
+- claves HMAC, API y AES-GCM;
+- políticas de confianza y gobierno con sus fingerprints;
+- compatibilidad acumulada V1–V4.
 
 ## Controles acumulados
 
 | Amenaza | Control |
 | --- | --- |
-| PII expuesta en tablas | correo sustituido por HMAC-SHA256 |
-| Duplicación o conflicto | clave primaria e idempotencia fail-closed |
-| Registro inválido descartado | cuarentena minimizada con motivo |
-| Fuente o política intercambiada | SHA-256 de ambos artefactos por ejecución |
-| Deriva silenciosa de esquema | compatibilidad explícita y rechazo cerrado |
-| Calidad degradada sin señal | SLO, breaches persistidos y código de salida 2 |
-| Lectura HTTP no autorizada | `X-API-Key` obligatorio y comparación constante |
-| Traversal o lectura de archivo | sólo basename `.csv` bajo raíz resuelta |
-| Exposición de host o token | DTO por allowlist sin ruta ni `subject_token` |
-| XSS o inclusión remota | assets same-origin, CSP y render con `textContent` |
-| Persistencia de clave en navegador | `sessionStorage`, nunca `localStorage` |
-| Clickjacking o MIME confusion | `frame-ancestors`, `DENY` y `nosniff` |
-| Publicación accidental en red | bind loopback; `--allow-network` obligatorio |
-| Operaciones simultáneas locales | exclusión mutua de ingesta en el proceso |
+| PII directa persistida | correo sustituido por HMAC-SHA256 |
+| Conflicto por reintento | idempotencia conflict-aware y rollback |
+| Deriva de esquema | compatibilidad explícita y fail-closed |
+| Degradación de calidad | SLO persistido y estado `breached` |
+| Clave compartida universal | principal individual y RBAC deny-by-default |
+| Escalada horizontal | rol resuelto desde digest server-side, nunca desde el request |
+| Ruta/error sensible en claro | AES-256-GCM con AAD y clave externa |
+| Reutilización de nonce | 96 bits aleatorios nuevos por cifrado |
+| Alteración del ledger | hash del evento + hash previo y triggers append-only |
+| Borrado no autorizado | `admin`, permiso y fingerprint exacto |
+| Borrado sin evidencia | eliminación y evento de auditoría en una transacción |
+| Traversal | sólo basename `.csv` bajo raíz resuelta |
+| Exposición HTTP | DTO por allowlist, CSP y `no-store` |
+| Publicación accidental | loopback por defecto; red exige `--allow-network` |
 
 ## Fronteras
 
 ```mermaid
-flowchart LR
-    U["Operador"] -->|"X-API-Key"| A["API V3"]
-    A -->|"basename validado"| F["CSV sintético"]
-    A --> P["Pipeline V2"]
-    P --> D["SQLite + evidencia"]
+flowchart TD
+    U["Principal"] -->|"API key"| I["Identity"]
+    I --> R["RBAC policy"]
+    R -->|"allowed"| O["Operation"]
+    R --> A["Audit chain"]
+    O --> E["Encrypted metadata"]
+    O --> D["SQLite data plane"]
 ```
 
-La API no transforma la clave de acceso en autorización por rol. La política y
-el directorio de fuentes pertenecen al servidor. El navegador sólo recibe
-datos minimizados.
+La política de gobierno contiene digests de claves, nunca claves. La clave de
+cifrado sólo entra desde el entorno o un gestor de secretos. El navegador no
+recibe digests, rutas internas, `subject_token` ni detalle cifrado bruto.
 
 ## Riesgos residuales
 
-- una API key compartida no aporta identidad individual, revocación selectiva
-  ni autorización por rol; V4 incorpora RBAC;
-- SQLite no cifra el archivo en reposo y un administrador del host puede
-  modificar base o política;
-- no hay rate limiting distribuido, TLS terminado por la aplicación ni
-  protección frente a múltiples procesos;
-- `sessionStorage` reduce persistencia, pero un XSS del mismo origen podría leer
-  la clave; la CSP y la ausencia de HTML dinámico reducen esa superficie;
-- el ledger aún no usa encadenamiento criptográfico;
-- los request IDs facilitan correlación, pero V3 no persiste auditoría de actor.
+- la autenticación local por API key no ofrece MFA, SSO, expiración automática
+  ni ciclo de vida corporativo; producción requiere un IdP o gateway;
+- sólo se cifran campos sensibles seleccionados: SQLite, WAL y copias completas
+  deben protegerse también mediante cifrado de volumen o SQLCipher;
+- un administrador del host con acceso a proceso, base y claves puede alterar
+  la aplicación o sustituir el archivo; no existe raíz de confianza externa;
+- el encadenamiento detecta cambios si se conserva una cabeza confiable, pero
+  no evita el reemplazo integral del archivo por una copia anterior;
+- no hay rate limiting distribuido, TLS terminado por la aplicación ni lock
+  entre múltiples procesos;
+- `sessionStorage` limita persistencia, pero un XSS same-origin podría leer la
+  clave activa; CSP y renderizado con `textContent` reducen la superficie;
+- rotar AES-GCM requiere una migración explícita de ciphertexts.

@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Sequence
 
+from regulated_data_ops.crypto import FieldCipher
+from regulated_data_ops.governance import GovernancePolicy
 from regulated_data_ops.pipeline import IngestionPipeline
 from regulated_data_ops.store import DataStore
 from regulated_data_ops.trust import DEFAULT_TRUST_POLICY, TrustPolicy
@@ -31,11 +33,16 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("schema-status", help="show applied schema migrations")
     policy = commands.add_parser("policy-check", help="validate and fingerprint policy")
     policy.add_argument("path")
-    serve = commands.add_parser("serve", help="serve the authenticated V3 operations plane")
+    governance = commands.add_parser(
+        "governance-check", help="validate and fingerprint the V4 governance policy"
+    )
+    governance.add_argument("path")
+    serve = commands.add_parser("serve", help="serve the governed V4 operations plane")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--ingestion-root", default="examples")
     serve.add_argument("--policy", default="config/trust-policy.json")
+    serve.add_argument("--governance", default="config/governance-policy.json")
     serve.add_argument(
         "--allow-network",
         action="store_true",
@@ -57,25 +64,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise SystemExit(
                 "non-loopback binding requires the explicit --allow-network flag"
             )
-        api_key = os.getenv("REGULATED_DATA_API_KEY")
         hmac_key = os.getenv("REGULATED_DATA_HMAC_KEY")
-        if not api_key:
-            raise SystemExit("REGULATED_DATA_API_KEY is required to serve V3")
         if not hmac_key:
-            raise SystemExit("REGULATED_DATA_HMAC_KEY is required to serve V3")
+            raise SystemExit("REGULATED_DATA_HMAC_KEY is required to serve V4")
+        encryption_key = os.getenv("REGULATED_DATA_ENCRYPTION_KEY")
+        if not encryption_key:
+            raise SystemExit("REGULATED_DATA_ENCRYPTION_KEY is required to serve V4")
         from regulated_data_ops.web import AppConfig, create_app
 
         try:
             import uvicorn
         except ImportError as exc:  # pragma: no cover - packaging failure guard
-            raise SystemExit("uvicorn is required to serve V3") from exc
+            raise SystemExit("uvicorn is required to serve V4") from exc
         app = create_app(
             AppConfig(
                 database=Path(args.database),
                 ingestion_root=Path(args.ingestion_root),
                 policy_path=Path(args.policy),
-                api_key=api_key,
+                governance_path=Path(args.governance),
                 hmac_key=hmac_key,
+                encryption_key=encryption_key,
                 enable_docs=args.enable_docs,
             )
         )
@@ -86,7 +94,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not key:
             raise SystemExit("REGULATED_DATA_HMAC_KEY is required for ingestion")
         policy = TrustPolicy.load(args.policy) if args.policy else DEFAULT_TRUST_POLICY
-        pipeline = IngestionPipeline(args.database, key, policy=policy)
+        pipeline = IngestionPipeline(
+            args.database,
+            key,
+            policy=policy,
+            field_cipher=_field_cipher_from_env(),
+        )
         try:
             result = pipeline.ingest(args.source).as_dict()
         finally:
@@ -94,8 +107,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "policy-check":
         policy = TrustPolicy.load(args.path)
         result = policy.as_dict() | {"fingerprint": policy.fingerprint}
+    elif args.command == "governance-check":
+        governance = GovernancePolicy.load(args.path)
+        result = governance.public_dict()
     else:
-        store = DataStore(args.database)
+        store = DataStore(args.database, field_cipher=_field_cipher_from_env())
         try:
             if args.command == "status":
                 result = store.latest_run()
@@ -120,6 +136,11 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _field_cipher_from_env() -> FieldCipher | None:
+    encoded = os.getenv("REGULATED_DATA_ENCRYPTION_KEY")
+    return FieldCipher.from_base64(encoded) if encoded else None
 
 
 if __name__ == "__main__":
